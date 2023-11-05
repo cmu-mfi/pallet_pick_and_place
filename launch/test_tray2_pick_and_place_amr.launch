@@ -1,0 +1,9 @@
+<launch>
+    <arg name="namespace" default="yk_builder"/>
+    <group ns="$(arg namespace)">
+        <node pkg="pallet_pick_and_place" name="test_tray2_pick_and_place_amr" type="test_tray2_pick_and_place_amr.py" output="screen">
+            <param name="namespace" value="$(arg namespace)"/>
+            <param name="root_pwd" value="$(find pallet_pick_and_place)"/>
+        </node>
+    </group>
+</launch>

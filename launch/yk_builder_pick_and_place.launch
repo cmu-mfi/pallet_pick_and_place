@@ -1,0 +1,9 @@
+<launch>
+    <arg name="namespace" default="/"/>
+    <group ns="$(arg namespace)">
+        <node pkg="pallet_pick_and_place" name="yk_builder_pick_and_place_client" type="yk_builder_pick_and_place_client.py" output="screen">
+            <param name="namespace" value="$(arg namespace)"/>
+            <param name="root_pwd" value="$(find pallet_pick_and_place)"/>
+        </node>
+    </group>
+</launch>

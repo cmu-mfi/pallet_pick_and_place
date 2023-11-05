@@ -1,0 +1,9 @@
+<launch>
+    <arg name="namespace" default="yk_builder"/>
+    <group ns="$(arg namespace)">
+        <node pkg="pallet_pick_and_place" name="test_lego_build" type="test_lego_build.py" output="screen">
+            <param name="namespace" value="$(arg namespace)"/>
+            <param name="root_pwd" value="$(find pallet_pick_and_place)"/>
+        </node>
+    </group>
+</launch>
