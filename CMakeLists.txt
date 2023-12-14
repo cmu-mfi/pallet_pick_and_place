@@ -11,6 +11,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
   std_msgs
+  message_generation
 ) 
 
 ## System dependencies are found with CMake's conventions
@@ -53,12 +54,11 @@ catkin_python_setup()
 #   Message2.msg
 # )
 
-## Generate services in the 'srv' folder
-# add_service_files(
-#   FILES
-#   Service1.srv
-#   Service2.srv
-# )
+# Generate services in the 'srv' folder
+add_service_files(
+  FILES
+  PalletPickAndPlace.srv
+)
 
 ## Generate actions in the 'action' folder
 # add_action_files(
@@ -68,10 +68,10 @@ catkin_python_setup()
 # )
 
 ## Generate added messages and services with any dependencies listed here
-# generate_messages(
-#   DEPENDENCIES
-#   std_msgs
-# )
+generate_messages(
+  DEPENDENCIES
+  std_msgs
+)
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -163,6 +163,7 @@ catkin_install_python(PROGRAMS
   scripts/yk_builder_pick_and_place_client.py
   scripts/save_lego_pose.py
   scripts/test_lego_build.py
+  scripts/pallet_pick_and_place_server.py
   scripts/test_amr_pick_and_place_tray2.py
   scripts/test_tray2_pick_and_place_amr.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

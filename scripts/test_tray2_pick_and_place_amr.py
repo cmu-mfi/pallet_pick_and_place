@@ -20,7 +20,7 @@ from autolab_core import Point, CameraIntrinsics, RigidTransform
 def get_object_center_point_in_world(image_x, image_y, depth_image, intrinsics, transform):
 
     object_center = Point(np.array([image_x, image_y]), 'azure_kinect_overhead')
-    object_depth = depth_image[image_y, image_x]
+    object_depth = np.mean(depth_image[image_y-1:image_y+1, image_x-1:image_x+1])
 
     return transform * intrinsics.deproject_pixel(object_depth, object_center)
 

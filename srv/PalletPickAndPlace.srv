@@ -1,0 +1,4 @@
+uint8 location # 1 is in front, 2 is side
+bool load
+---
+bool success
