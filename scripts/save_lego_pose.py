@@ -25,7 +25,7 @@ def run():
 
     T_lego_world = T_ee_world * T_lego_ee
 
-    T_lego_world.save(root_pwd+'/config/hook_world_intermediate_pos2.tf')
+    T_lego_world.save(root_pwd+'/config/hook_world_intermediate_pos1_load.tf')
 
 if __name__ == "__main__":
     run()
