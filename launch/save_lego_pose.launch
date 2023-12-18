@@ -1,5 +1,5 @@
 <launch>
-    <arg name="namespace" default="yk_builder"/>
+    <arg name="namespace" default="yk_creator"/>
     <group ns="$(arg namespace)">
         <node pkg="pallet_pick_and_place" name="save_lego_pose" type="save_lego_pose.py" output="screen">
             <param name="namespace" value="$(arg namespace)"/>
