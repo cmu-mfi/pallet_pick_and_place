@@ -1,4 +1,5 @@
 uint8 location # 1 is in front, 2 is side
 bool load
+uint8 amr
 ---
 bool success

@@ -29,13 +29,17 @@ class PalletPickAndPlaceServer:
         self.toggle_pub = rospy.Publisher('/toggle', Int16, queue_size=1)
         if namespace == 'yk_builder':
             self.toggle_offset = 0
+            self.amr_x_limits = [-0.555, -0.5]
+            self.amr_y_limits = [-0.335, -0.25]
         elif namespace == 'yk_creator':
             self.toggle_offset = 2 
+            self.amr_x_limits = [-0.555, -0.5]
+            self.amr_y_limits = [-0.37, -0.25]
         self.T_hook_ee = RigidTransform.load(root_pwd+'/config/hook_ee.tf')
-        self.T_tray_amr = RigidTransform.load(root_pwd+'/config/'+self.namespace+'_tray_amr.tf')
+        self.T_tray_amr1 = RigidTransform.load(root_pwd+'/config/'+self.namespace+'_tray_amr1.tf')
+        self.T_tray_amr2 = RigidTransform.load(root_pwd+'/config/'+self.namespace+'_tray_amr2.tf')
         self.T_hook_world_amr = RigidTransform.load(root_pwd+'/config/hook_world_amr.tf')
-        self.amr_x_limits = [-0.55, -0.5]
-        self.amr_y_limits = [-0.335, -0.25]
+        
         self.T_hook_world_tray1 = RigidTransform.load(root_pwd+'/config/'+self.namespace+'_hook_world_tray1.tf')
         self.T_hook_world_tray2 = RigidTransform.load(root_pwd+'/config/'+self.namespace+'_hook_world_tray2.tf')
         self.T_hook_world_intermediate_pos1_unload = RigidTransform.load(root_pwd+'/config/hook_world_intermediate_pos1_unload.tf')
@@ -65,7 +69,10 @@ class PalletPickAndPlaceServer:
 
             print(amr_center_rigid_transform)
 
-            new_T_tray_world = amr_center_rigid_transform * amr_rotation * self.T_tray_amr
+            if req.amr == 1:
+                new_T_tray_world = amr_center_rigid_transform * amr_rotation * self.T_tray_amr1
+            elif req.amr == 2:
+                new_T_tray_world = amr_center_rigid_transform * amr_rotation * self.T_tray_amr2
 
             print(new_T_tray_world)
 
@@ -82,9 +89,9 @@ class PalletPickAndPlaceServer:
                 if req.load:
                     ########################## PICKING UP TRAY FROM TABLE ##########################
                     if req.location == 1:
-                        # lin_act_msg = Int16()
-                        # lin_act_msg.data = 1 + self.toggle_offset
-                        # self.toggle_pub.publish(lin_act_msg)
+                        lin_act_msg = Int16()
+                        lin_act_msg.data = 1 + self.toggle_offset
+                        self.toggle_pub.publish(lin_act_msg)
 
                         T_hook_world_tray1_pos1 = self.T_hook_world_tray1.copy()
 
@@ -117,6 +124,8 @@ class PalletPickAndPlaceServer:
                         print("Moving to the left 8cm")
                         while not self.robot_mg.go_to_pose_goal(tray1_pos3_goal_pose, cartesian_path=True):
                             pass
+
+                        import pdb; pdb.set_trace()
 
                         T_hook_world_tray1_pos4 = self.T_hook_world_tray1 * self.T_hook_rot_28
 
@@ -152,9 +161,9 @@ class PalletPickAndPlaceServer:
                             pass
 
                     elif req.location == 2:
-                        # lin_act_msg = Int16()
-                        # lin_act_msg.data = 2 + self.toggle_offset
-                        # self.toggle_pub.publish(lin_act_msg)
+                        lin_act_msg = Int16()
+                        lin_act_msg.data = 2 + self.toggle_offset
+                        self.toggle_pub.publish(lin_act_msg)
 
                         target_joint = self.robot_mg.get_current_joints()
                         target_joint[0] += np.pi*3/4
@@ -260,13 +269,13 @@ class PalletPickAndPlaceServer:
 
                     T_hook_world_amr_pos1 = T_hook_world_amr_pickup * self.T_hook_rot_30
 
-                    T_hook_world_amr_pos1.translation[2] += 0.1
+                    T_hook_world_amr_pos1.translation[2] += 0.05
                     
                     T_ee_world_amr_pos1 = T_hook_world_amr_pos1 * self.T_hook_ee.inverse()
 
                     amr_pos1_goal_pose = T_ee_world_amr_pos1.pose_msg
 
-                    print("Moving to 10cm above the amr.")
+                    print("Moving to 5cm above the amr.")
 
                     while not self.robot_mg.go_to_pose_goal(amr_pos1_goal_pose, cartesian_path=True):
                         pass
@@ -342,13 +351,13 @@ class PalletPickAndPlaceServer:
 
                     T_hook_world_amr_pos8 = T_hook_world_amr_pickup.copy()
 
-                    T_hook_world_amr_pos8.translation = T_hook_world_amr_pickup.translation + np.array([0,0.04,0.07])
+                    T_hook_world_amr_pos8.translation = T_hook_world_amr_pickup.translation + np.array([0,0.04,0.05])
 
                     T_ee_world_amr_pos8 = T_hook_world_amr_pos8 * self.T_hook_ee.inverse()
                     
                     amr_pos8_goal_pose = T_ee_world_amr_pos8.pose_msg
 
-                    print("Moving up 7cm")
+                    print("Moving up 5cm")
                     while not self.robot_mg.go_to_pose_goal(amr_pos8_goal_pose, cartesian_path=True):
                         pass
 
@@ -362,13 +371,13 @@ class PalletPickAndPlaceServer:
 
                     T_hook_world_amr_pos1 = T_hook_world_amr_pickup.copy()
 
-                    T_hook_world_amr_pos1.translation = T_hook_world_amr_pickup.translation + np.array([0,0.04,0.07])
+                    T_hook_world_amr_pos1.translation = T_hook_world_amr_pickup.translation + np.array([0,0.04,0.05])
 
                     T_ee_world_amr_pos1 = T_hook_world_amr_pos1 * self.T_hook_ee.inverse()
                     
                     amr_pos1_goal_pose = T_ee_world_amr_pos1.pose_msg
 
-                    print("Rotating end effector to -70 degrees and moving -4cm in x and +7cm in z from tray pick up location")
+                    print("Rotating end effector to -70 degrees and moving -4cm in x and +5cm in z from tray pick up location")
                     while not self.robot_mg.go_to_pose_goal(amr_pos1_goal_pose, cartesian_path=True):
                         pass
 
@@ -409,13 +418,13 @@ class PalletPickAndPlaceServer:
 
                     T_hook_world_amr_pos5 = T_hook_world_amr_pickup * self.T_hook_rot_30
 
-                    T_hook_world_amr_pos5.translation[2] += 0.1
+                    T_hook_world_amr_pos5.translation[2] += 0.05
                     
                     T_ee_world_amr_pos5 = T_hook_world_amr_pos5 * self.T_hook_ee.inverse()
 
                     amr_pos5_goal_pose = T_ee_world_amr_pos5.pose_msg
 
-                    print("Moving up 10cm while rotating 2 degrees around x")
+                    print("Moving up 5cm while rotating 2 degrees around x")
 
                     while not self.robot_mg.go_to_pose_goal(amr_pos5_goal_pose, cartesian_path=True):
                         pass
@@ -500,9 +509,9 @@ class PalletPickAndPlaceServer:
                         while not self.robot_mg.go_to_pose_goal(tray1_pos6_goal_pose, cartesian_path=True):
                             pass
 
-                        # lin_act_msg = Int16()
-                        # lin_act_msg.data = 1 + self.toggle_offset
-                        # self.toggle_pub.publish(lin_act_msg)
+                        lin_act_msg = Int16()
+                        lin_act_msg.data = 1 + self.toggle_offset
+                        self.toggle_pub.publish(lin_act_msg)
                     elif req.location == 2: 
 
                         T_ee_world_intermediate_pos2 = self.T_hook_world_intermediate_pos2_unload * self.T_hook_ee.inverse()
@@ -592,9 +601,9 @@ class PalletPickAndPlaceServer:
                         while not self.robot_mg.go_to_pose_goal(tray2_pos6_goal_pose, cartesian_path=True):
                             pass
 
-                        # lin_act_msg = Int16()
-                        # lin_act_msg.data = 2 + self.toggle_offset
-                        # self.toggle_pub.publish(lin_act_msg)
+                        lin_act_msg = Int16()
+                        lin_act_msg.data = 2 + self.toggle_offset
+                        self.toggle_pub.publish(lin_act_msg)
                         
             print("Returning to Home")
             while not self.robot_mg.go_home():

@@ -166,6 +166,7 @@ catkin_install_python(PROGRAMS
   scripts/pallet_pick_and_place_server.py
   scripts/test_amr_pick_and_place_tray2.py
   scripts/test_tray2_pick_and_place_amr.py
+  scripts/yk_robots_resource_server.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
