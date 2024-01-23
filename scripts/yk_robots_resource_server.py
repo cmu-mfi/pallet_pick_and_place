@@ -10,7 +10,7 @@ from std_msgs.msg import Int64, Float32MultiArray
 # creating a Flask app 
 app = Flask(__name__)
 
-executer_url = 'http://192.168.1.20:9091/execution'
+executer_url = 'http://localhost:9091/execution'
 threading.Thread(target=lambda: rospy.init_node('flask_server2', disable_signals=True, anonymous=True)).start()
 
 def yk_robots (start_msg):
@@ -116,7 +116,7 @@ def yk_robots (start_msg):
                 yk_creator_task_type_pub.publish(1)
 
             yk_creator_assembly_plate_state_pub.publish(Float32MultiArray(data=[0.27483, 0.037, 0.189, 0, 0, 0.00668]))
-            yk_creator_kit_plate_state_pub.publish(Float32MultiArray(data=[0.2615, 0.442, 0.189, 0, 0, 0.02116]))
+            yk_creator_kit_plate_state_pub.publish(Float32MultiArray(data=[0.261, 0.442, 0.189, 0, 0, 0.02116]))
             rospy.sleep(1)
             yk_creator_start_task_pub.publish(1)
             rospy.sleep(1)
@@ -140,4 +140,4 @@ def start_execution():
 
 # driver function 
 if __name__ == '__main__': 
-    app.run(host=os.environ['ROS_IP'],debug=True, port=9089)
+    app.run(debug=True, port=9089)

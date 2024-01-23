@@ -16,8 +16,11 @@ import numpy as np
 import rospy
 import sys
 import os
+import pdb
 
 from pallet_pick_and_place.srv import PalletPickAndPlace,PalletPickAndPlaceResponse
+
+debug = True
 
 class PalletPickAndPlaceServer:
 
@@ -29,12 +32,12 @@ class PalletPickAndPlaceServer:
         self.toggle_pub = rospy.Publisher('/toggle', Int16, queue_size=1)
         if namespace == 'yk_builder':
             self.toggle_offset = 0
-            self.amr_x_limits = [-0.555, -0.5]
-            self.amr_y_limits = [-0.335, -0.25]
+            self.amr_x_limits = [-0.54, -0.5]
+            self.amr_y_limits = [-0.34, -0.27]
         elif namespace == 'yk_creator':
             self.toggle_offset = 2 
-            self.amr_x_limits = [-0.555, -0.5]
-            self.amr_y_limits = [-0.37, -0.25]
+            self.amr_x_limits = [-0.53, -0.495]
+            self.amr_y_limits = [-0.35, -0.285]
         self.T_hook_ee = RigidTransform.load(root_pwd+'/config/hook_ee.tf')
         self.T_tray_amr1 = RigidTransform.load(root_pwd+'/config/'+self.namespace+'_tray_amr1.tf')
         self.T_tray_amr2 = RigidTransform.load(root_pwd+'/config/'+self.namespace+'_tray_amr2.tf')
@@ -62,7 +65,10 @@ class PalletPickAndPlaceServer:
 
             amr_pose = rospy.wait_for_message('/'+self.namespace+'/amr_pose', Pose2D)
 
-            amr_center = [amr_pose.x, amr_pose.y, 0.205]
+            if self.namespace == 'yk_builder':
+                amr_center = [amr_pose.x, amr_pose.y, 0.21]
+            elif self.namespace == 'yk_creator':
+                amr_center = [amr_pose.x, amr_pose.y, 0.205]
 
             amr_center_rigid_transform = RigidTransform(translation=amr_center, from_frame='amr', to_frame='world')
             amr_rotation = RigidTransform(rotation=RigidTransform.z_axis_rotation(amr_pose.theta), from_frame='amr', to_frame='amr')
@@ -82,181 +88,192 @@ class PalletPickAndPlaceServer:
 
             print(T_hook_world_amr_pickup)
 
-            if amr_center[0] < self.amr_x_limits[0] or amr_center[0] > self.amr_x_limits[1] or amr_center[1] < self.amr_y_limits[0] or amr_center[1] > self.amr_y_limits[1]:
+            while amr_center[0] < self.amr_x_limits[0] or amr_center[0] > self.amr_x_limits[1] or amr_center[1] < self.amr_y_limits[0] or amr_center[1] > self.amr_y_limits[1]:
                 print("AMR is not docked within a suitable picking or placing location. Please have the AMR redock.")
-                return PalletPickAndPlaceResponse(False)
-            else:
-                if req.load:
-                    ########################## PICKING UP TRAY FROM TABLE ##########################
-                    if req.location == 1:
-                        lin_act_msg = Int16()
-                        lin_act_msg.data = 1 + self.toggle_offset
-                        self.toggle_pub.publish(lin_act_msg)
+                input("Waiting for AMR to finish redocking. Press enter when done")
 
-                        T_hook_world_tray1_pos1 = self.T_hook_world_tray1.copy()
+                amr_pose = rospy.wait_for_message('/'+self.namespace+'/amr_pose', Pose2D)
 
-                        T_hook_world_tray1_pos1.translation = T_hook_world_tray1_pos1.translation + np.array([0,-0.08,0.1])
-                        T_ee_world_tray1_pos1 = T_hook_world_tray1_pos1 * self.T_hook_ee.inverse()
+                amr_center = [amr_pose.x, amr_pose.y, 0.205]
 
-                        tray1_pos1_goal_pose = T_ee_world_tray1_pos1.pose_msg
+                amr_center_rigid_transform = RigidTransform(translation=amr_center, from_frame='amr', to_frame='world')
+                amr_rotation = RigidTransform(rotation=RigidTransform.z_axis_rotation(amr_pose.theta), from_frame='amr', to_frame='amr')
 
-                        print("Rotating end effector to -70 degrees and moving -8cm in y and +10cm in z from tray pick up location")
-                        while not self.robot_mg.go_to_pose_goal(tray1_pos1_goal_pose, cartesian_path=True):
-                            pass
+                print(amr_center_rigid_transform)
 
-                        T_hook_world_tray1_pos2 = self.T_hook_world_tray1.copy()
+                if req.amr == 1:
+                    new_T_tray_world = amr_center_rigid_transform * amr_rotation * self.T_tray_amr1
+                elif req.amr == 2:
+                    new_T_tray_world = amr_center_rigid_transform * amr_rotation * self.T_tray_amr2
 
-                        T_hook_world_tray1_pos2.translation = T_hook_world_tray1_pos2.translation + np.array([0,-0.08,0])
-                        T_ee_world_tray1_pos2 = T_hook_world_tray1_pos2 * self.T_hook_ee.inverse()
+                print(new_T_tray_world)
 
-                        tray1_pos2_goal_pose = T_ee_world_tray1_pos2.pose_msg
+                T_ee_world = RigidTransform(rotation = RigidTransform.z_axis_rotation(amr_pose.theta), from_frame='world', to_frame='world') * self.T_hook_world_amr * self.T_hook_ee.inverse()
 
-                        print("Moving down 10cm")
-                        while not self.robot_mg.go_to_pose_goal(tray1_pos2_goal_pose, cartesian_path=True):
-                            pass
+                T_hook_world_amr_pickup = RigidTransform(rotation = T_ee_world.rotation, translation = new_T_tray_world.translation, from_frame='hook', to_frame='world')
 
-                        T_hook_world_tray1_pos3 = self.T_hook_world_tray1.copy()
+                print(T_hook_world_amr_pickup)
 
-                        T_ee_world_tray1_pos3 = T_hook_world_tray1_pos3 * self.T_hook_ee.inverse()
+            # if amr_center[0] < self.amr_x_limits[0] or amr_center[0] > self.amr_x_limits[1] or amr_center[1] < self.amr_y_limits[0] or amr_center[1] > self.amr_y_limits[1]:
+            #     print("AMR is not docked within a suitable picking or placing location. Please have the AMR redock.")
+            #     return PalletPickAndPlaceResponse(False)
+            #else:
+            if req.load:
+                ########################## PICKING UP TRAY FROM TABLE ##########################
+                if req.location == 1:
+                    lin_act_msg = Int16()
+                    lin_act_msg.data = 1 + self.toggle_offset
+                    self.toggle_pub.publish(lin_act_msg)
 
-                        tray1_pos3_goal_pose = T_ee_world_tray1_pos3.pose_msg
+                    T_hook_world_tray1_pos1 = self.T_hook_world_tray1.copy()
 
-                        print("Moving to the left 8cm")
-                        while not self.robot_mg.go_to_pose_goal(tray1_pos3_goal_pose, cartesian_path=True):
-                            pass
+                    T_hook_world_tray1_pos1.translation = T_hook_world_tray1_pos1.translation + np.array([0,-0.08,0.1])
+                    T_ee_world_tray1_pos1 = T_hook_world_tray1_pos1 * self.T_hook_ee.inverse()
 
-                        import pdb; pdb.set_trace()
+                    tray1_pos1_goal_pose = T_ee_world_tray1_pos1.pose_msg
 
-                        T_hook_world_tray1_pos4 = self.T_hook_world_tray1 * self.T_hook_rot_28
+                    print("Rotating end effector to -70 degrees and moving -8cm in y and +10cm in z from tray pick up location")
+                    while not self.robot_mg.go_to_pose_goal(tray1_pos1_goal_pose, cartesian_path=True):
+                        pass
 
-                        T_ee_world_tray1_pos4 = T_hook_world_tray1_pos4 * self.T_hook_ee.inverse()
+                    T_hook_world_tray1_pos2 = self.T_hook_world_tray1.copy()
 
-                        tray1_pos4_goal_pose = T_ee_world_tray1_pos4.pose_msg
+                    T_hook_world_tray1_pos2.translation = T_hook_world_tray1_pos2.translation + np.array([0,-0.08,0])
+                    T_ee_world_tray1_pos2 = T_hook_world_tray1_pos2 * self.T_hook_ee.inverse()
 
-                        print("Rotating end-effector 28 degrees around x")
+                    tray1_pos2_goal_pose = T_ee_world_tray1_pos2.pose_msg
 
-                        while not self.robot_mg.go_to_pose_goal(tray1_pos4_goal_pose, cartesian_path=True):
-                            pass
+                    print("Moving down 10cm")
+                    while not self.robot_mg.go_to_pose_goal(tray1_pos2_goal_pose, cartesian_path=True):
+                        pass
 
-                        T_hook_world_tray1_pos5 = self.T_hook_world_tray1 * self.T_hook_rot_28
-                        T_hook_world_tray1_pos5.translation = T_hook_world_tray1_pos5.translation + np.array([0, -0.33,0])
-                        T_ee_world_tray1_pos5 = T_hook_world_tray1_pos5 * self.T_hook_ee.inverse()
+                    T_hook_world_tray1_pos3 = self.T_hook_world_tray1.copy()
 
-                        tray1_pos5_goal_pose = T_ee_world_tray1_pos5.pose_msg
+                    T_ee_world_tray1_pos3 = T_hook_world_tray1_pos3 * self.T_hook_ee.inverse()
 
-                        print("Moving to the right 33cm")
+                    tray1_pos3_goal_pose = T_ee_world_tray1_pos3.pose_msg
 
-                        while not self.robot_mg.go_to_pose_goal(tray1_pos5_goal_pose, cartesian_path=True):
-                            pass
+                    print("Moving to the left 8cm")
+                    while not self.robot_mg.go_to_pose_goal(tray1_pos3_goal_pose, cartesian_path=True):
+                        pass
 
-                        T_hook_world_tray1_pos6 = self.T_hook_world_tray1 * self.T_hook_rot_30
-                        T_hook_world_tray1_pos6.translation = T_hook_world_tray1_pos6.translation + np.array([0, -0.33,0.1])
-                        T_ee_world_tray1_pos6 = T_hook_world_tray1_pos6 * self.T_hook_ee.inverse()
+                    if debug:
+                        pdb.set_trace()
 
-                        tray1_pos6_goal_pose = T_ee_world_tray1_pos6.pose_msg
+                    T_hook_world_tray1_pos4 = self.T_hook_world_tray1 * self.T_hook_rot_28
 
-                        print("Moving up 10cm while rotating 2 degrees around x")
+                    T_ee_world_tray1_pos4 = T_hook_world_tray1_pos4 * self.T_hook_ee.inverse()
 
-                        while not self.robot_mg.go_to_pose_goal(tray1_pos6_goal_pose, cartesian_path=True):
-                            pass
+                    tray1_pos4_goal_pose = T_ee_world_tray1_pos4.pose_msg
 
-                    elif req.location == 2:
-                        lin_act_msg = Int16()
-                        lin_act_msg.data = 2 + self.toggle_offset
-                        self.toggle_pub.publish(lin_act_msg)
+                    print("Rotating end-effector 28 degrees around x")
 
-                        target_joint = self.robot_mg.get_current_joints()
-                        target_joint[0] += np.pi*3/4
+                    while not self.robot_mg.go_to_pose_goal(tray1_pos4_goal_pose, cartesian_path=True):
+                        pass
 
-                        while not self.robot_mg.go_to_joint_state(target_joint, cartesian_path=False):
-                            pass
+                    T_hook_world_tray1_pos5 = self.T_hook_world_tray1 * self.T_hook_rot_28
+                    T_hook_world_tray1_pos5.translation = T_hook_world_tray1_pos5.translation + np.array([0, -0.33,0])
+                    T_ee_world_tray1_pos5 = T_hook_world_tray1_pos5 * self.T_hook_ee.inverse()
 
-                        T_hook_world_tray2_pos1 = self.T_hook_world_tray2.copy()
+                    tray1_pos5_goal_pose = T_ee_world_tray1_pos5.pose_msg
 
-                        T_hook_world_tray2_pos1.translation = T_hook_world_tray2_pos1.translation + np.array([-0.08,0,0.1])
-                        T_ee_world_tray2_pos1 = T_hook_world_tray2_pos1 * self.T_hook_ee.inverse()
+                    print("Moving to the right 33cm")
 
-                        tray2_pos1_goal_pose = T_ee_world_tray2_pos1.pose_msg
+                    while not self.robot_mg.go_to_pose_goal(tray1_pos5_goal_pose, cartesian_path=True):
+                        pass
 
-                        print("Rotating end effector to -70 degrees and moving -8cm in x and +10cm in z from tray pick up location")
-                        while not self.robot_mg.go_to_pose_goal(tray2_pos1_goal_pose, cartesian_path=True):
-                            pass
+                    T_hook_world_tray1_pos6 = self.T_hook_world_tray1 * self.T_hook_rot_30
+                    T_hook_world_tray1_pos6.translation = T_hook_world_tray1_pos6.translation + np.array([0, -0.33,0.1])
+                    T_ee_world_tray1_pos6 = T_hook_world_tray1_pos6 * self.T_hook_ee.inverse()
 
-                        T_hook_world_tray2_pos2 = self.T_hook_world_tray2.copy()
+                    tray1_pos6_goal_pose = T_ee_world_tray1_pos6.pose_msg
 
-                        T_hook_world_tray2_pos2.translation = T_hook_world_tray2_pos2.translation + np.array([-0.08,0,0])
-                        T_ee_world_tray2_pos2 = T_hook_world_tray2_pos2 * self.T_hook_ee.inverse()
+                    print("Moving up 10cm while rotating 2 degrees around x")
 
-                        tray2_pos2_goal_pose = T_ee_world_tray2_pos2.pose_msg
+                    while not self.robot_mg.go_to_pose_goal(tray1_pos6_goal_pose, cartesian_path=True):
+                        pass
 
-                        print("Moving down 10cm")
+                elif req.location == 2:
+                    lin_act_msg = Int16()
+                    lin_act_msg.data = 2 + self.toggle_offset
+                    self.toggle_pub.publish(lin_act_msg)
 
-                        while not self.robot_mg.go_to_pose_goal(tray2_pos2_goal_pose, cartesian_path=True):
-                            pass
+                    target_joint = self.robot_mg.get_current_joints()
+                    target_joint[0] += np.pi*3/4
 
-                        T_hook_world_tray2_pos3 = self.T_hook_world_tray2.copy()
+                    while not self.robot_mg.go_to_joint_state(target_joint, cartesian_path=False):
+                        pass
 
-                        T_ee_world_tray2_pos3 = T_hook_world_tray2_pos3 * self.T_hook_ee.inverse()
+                    T_hook_world_tray2_pos1 = self.T_hook_world_tray2.copy()
 
-                        tray2_pos3_goal_pose = T_ee_world_tray2_pos3.pose_msg
+                    T_hook_world_tray2_pos1.translation = T_hook_world_tray2_pos1.translation + np.array([-0.08,0,0.1])
+                    T_ee_world_tray2_pos1 = T_hook_world_tray2_pos1 * self.T_hook_ee.inverse()
 
-                        print("Moving forward 8cm")
+                    tray2_pos1_goal_pose = T_ee_world_tray2_pos1.pose_msg
 
-                        while not self.robot_mg.go_to_pose_goal(tray2_pos3_goal_pose, cartesian_path=True):
-                            pass
+                    print("Rotating end effector to -70 degrees and moving -8cm in x and +10cm in z from tray pick up location")
+                    while not self.robot_mg.go_to_pose_goal(tray2_pos1_goal_pose, cartesian_path=True):
+                        pass
 
-                        T_hook_world_tray2_pos4 = self.T_hook_world_tray2 * self.T_hook_rot_28
+                    T_hook_world_tray2_pos2 = self.T_hook_world_tray2.copy()
 
-                        T_ee_world_tray2_pos4 = T_hook_world_tray2_pos4 * self.T_hook_ee.inverse()
+                    T_hook_world_tray2_pos2.translation = T_hook_world_tray2_pos2.translation + np.array([-0.08,0,0])
+                    T_ee_world_tray2_pos2 = T_hook_world_tray2_pos2 * self.T_hook_ee.inverse()
 
-                        tray2_pos4_goal_pose = T_ee_world_tray2_pos4.pose_msg
+                    tray2_pos2_goal_pose = T_ee_world_tray2_pos2.pose_msg
 
-                        print("Rotating end-effector 28 degrees around x")
+                    print("Moving down 10cm")
 
-                        while not self.robot_mg.go_to_pose_goal(tray2_pos4_goal_pose, cartesian_path=True):
-                            pass
+                    while not self.robot_mg.go_to_pose_goal(tray2_pos2_goal_pose, cartesian_path=True):
+                        pass
 
-                        T_hook_world_tray2_pos5 = self.T_hook_world_tray2 * self.T_hook_rot_28
-                        T_hook_world_tray2_pos5.translation = T_hook_world_tray2_pos5.translation + np.array([-0.33,0,0])
+                    T_hook_world_tray2_pos3 = self.T_hook_world_tray2.copy()
 
-                        T_ee_world_tray2_pos5 = T_hook_world_tray2_pos5 * self.T_hook_ee.inverse()
+                    T_ee_world_tray2_pos3 = T_hook_world_tray2_pos3 * self.T_hook_ee.inverse()
 
-                        tray2_pos5_goal_pose = T_ee_world_tray2_pos5.pose_msg
+                    tray2_pos3_goal_pose = T_ee_world_tray2_pos3.pose_msg
 
-                        print("Moving backward 33cm")
+                    print("Moving forward 8cm")
 
-                        while not self.robot_mg.go_to_pose_goal(tray2_pos5_goal_pose, cartesian_path=True):
-                            pass
+                    while not self.robot_mg.go_to_pose_goal(tray2_pos3_goal_pose, cartesian_path=True):
+                        pass
 
-                        T_hook_world_tray2_pos6 = self.T_hook_world_tray2 * self.T_hook_rot_30
-                        T_hook_world_tray2_pos6.translation = T_hook_world_tray2_pos6.translation + np.array([-0.33,0,0.2])
+                    T_hook_world_tray2_pos4 = self.T_hook_world_tray2 * self.T_hook_rot_28
 
-                        T_ee_world_tray2_pos6 = T_hook_world_tray2_pos6 * self.T_hook_ee.inverse()
+                    T_ee_world_tray2_pos4 = T_hook_world_tray2_pos4 * self.T_hook_ee.inverse()
 
-                        tray2_pos6_goal_pose = T_ee_world_tray2_pos6.pose_msg
+                    tray2_pos4_goal_pose = T_ee_world_tray2_pos4.pose_msg
 
-                        print("Moving up 10cm while rotating 2 degrees around x")
+                    print("Rotating end-effector 28 degrees around x")
 
-                        while not self.robot_mg.go_to_pose_goal(tray2_pos6_goal_pose, cartesian_path=True):
-                            pass
+                    while not self.robot_mg.go_to_pose_goal(tray2_pos4_goal_pose, cartesian_path=True):
+                        pass
 
-                        T_ee_world_intermediate_pos1 = self.T_hook_world_intermediate_pos1_load * self.T_hook_ee.inverse()
+                    T_hook_world_tray2_pos5 = self.T_hook_world_tray2 * self.T_hook_rot_28
+                    T_hook_world_tray2_pos5.translation = T_hook_world_tray2_pos5.translation + np.array([-0.33,0,0])
 
-                        intermediate_pos1_goal_pose = T_ee_world_intermediate_pos1.pose_msg
+                    T_ee_world_tray2_pos5 = T_hook_world_tray2_pos5 * self.T_hook_ee.inverse()
 
-                        print("Moving to intermediate hook pose 1")
+                    tray2_pos5_goal_pose = T_ee_world_tray2_pos5.pose_msg
 
-                        while not self.robot_mg.go_to_pose_goal(intermediate_pos1_goal_pose, cartesian_path=True):
-                            pass
+                    print("Moving backward 33cm")
 
-                        target_joint = self.robot_mg.get_current_joints()
-                        target_joint[0] -= np.pi*5/4
+                    while not self.robot_mg.go_to_pose_goal(tray2_pos5_goal_pose, cartesian_path=True):
+                        pass
 
-                        print("Rotating 225 degrees")
-                        while not self.robot_mg.go_to_joint_state(target_joint, cartesian_path=False):
-                            pass
+                    T_hook_world_tray2_pos6 = self.T_hook_world_tray2 * self.T_hook_rot_30
+                    T_hook_world_tray2_pos6.translation = T_hook_world_tray2_pos6.translation + np.array([-0.33,0,0.2])
 
-                    T_ee_world_intermediate_pos1 = self.T_hook_world_intermediate_pos1_unload * self.T_hook_ee.inverse()
+                    T_ee_world_tray2_pos6 = T_hook_world_tray2_pos6 * self.T_hook_ee.inverse()
+
+                    tray2_pos6_goal_pose = T_ee_world_tray2_pos6.pose_msg
+
+                    print("Moving up 10cm while rotating 2 degrees around x")
+
+                    while not self.robot_mg.go_to_pose_goal(tray2_pos6_goal_pose, cartesian_path=True):
+                        pass
+
+                    T_ee_world_intermediate_pos1 = self.T_hook_world_intermediate_pos1_load * self.T_hook_ee.inverse()
 
                     intermediate_pos1_goal_pose = T_ee_world_intermediate_pos1.pose_msg
 
@@ -265,104 +282,243 @@ class PalletPickAndPlaceServer:
                     while not self.robot_mg.go_to_pose_goal(intermediate_pos1_goal_pose, cartesian_path=True):
                         pass
 
-                    ########################## PLACING TRAY ON AMR ##########################
+                    target_joint = self.robot_mg.get_current_joints()
+                    target_joint[0] -= np.pi*5/4
 
-                    T_hook_world_amr_pos1 = T_hook_world_amr_pickup * self.T_hook_rot_30
-
-                    T_hook_world_amr_pos1.translation[2] += 0.05
-                    
-                    T_ee_world_amr_pos1 = T_hook_world_amr_pos1 * self.T_hook_ee.inverse()
-
-                    amr_pos1_goal_pose = T_ee_world_amr_pos1.pose_msg
-
-                    print("Moving to 5cm above the amr.")
-
-                    while not self.robot_mg.go_to_pose_goal(amr_pos1_goal_pose, cartesian_path=True):
+                    print("Rotating 225 degrees")
+                    while not self.robot_mg.go_to_joint_state(target_joint, cartesian_path=False):
                         pass
 
-                    T_hook_world_amr_pos2 = T_hook_world_amr_pickup * self.T_hook_rot_28
+                T_ee_world_intermediate_pos1 = self.T_hook_world_intermediate_pos1_unload * self.T_hook_ee.inverse()
+
+                intermediate_pos1_goal_pose = T_ee_world_intermediate_pos1.pose_msg
+
+                print("Moving to intermediate hook pose 1")
+
+                while not self.robot_mg.go_to_pose_goal(intermediate_pos1_goal_pose, cartesian_path=True):
+                    pass
+
+                ########################## PLACING TRAY ON AMR ##########################
+
+                T_hook_world_amr_pos1 = T_hook_world_amr_pickup * self.T_hook_rot_30
+
+                T_hook_world_amr_pos1.translation[2] += 0.05
+                
+                T_ee_world_amr_pos1 = T_hook_world_amr_pos1 * self.T_hook_ee.inverse()
+
+                amr_pos1_goal_pose = T_ee_world_amr_pos1.pose_msg
+
+                print("Moving to 5cm above the amr.")
+
+                while not self.robot_mg.go_to_pose_goal(amr_pos1_goal_pose, cartesian_path=True):
+                    pass
+
+                T_hook_world_amr_pos2 = T_hook_world_amr_pickup * self.T_hook_rot_28
+
+                T_ee_world_amr_pos2 = T_hook_world_amr_pos2 * self.T_hook_ee.inverse()
+
+                amr_pos2_goal_pose = T_ee_world_amr_pos2.pose_msg
+
+                print("Moving down 10cm while rotating 2cm to deposit the tray into the slot.")
+
+                while not self.robot_mg.go_to_pose_goal(amr_pos2_goal_pose, cartesian_path=True):
+                    pass
+
+                T_hook_world_amr_pos3 = T_hook_world_amr_pickup.copy()
+
+                T_ee_world_amr_pos3 = T_hook_world_amr_pos3 * self.T_hook_ee.inverse()
+
+                amr_pos3_goal_pose = T_ee_world_amr_pos3.pose_msg
+
+                print("Rotating 28 degrees around x")
+                while not self.robot_mg.go_to_pose_goal(amr_pos3_goal_pose, cartesian_path=True):
+                    pass
+
+                T_hook_world_amr_pos4 = T_hook_world_amr_pickup.copy()
+
+                T_hook_world_amr_pos4.translation = T_hook_world_amr_pos4.translation + np.array([0.015,0,0])
+
+                T_ee_world_amr_pos4 = T_hook_world_amr_pos4 * self.T_hook_ee.inverse()
+
+                amr_pos4_goal_pose = T_ee_world_amr_pos4.pose_msg
+
+                print("Move Right 1.5cm to jiggle the tray into the slot.")
+
+                while not self.robot_mg.go_to_pose_goal(amr_pos4_goal_pose, cartesian_path=True):
+                    pass
+
+                T_hook_world_amr_pos5 = T_hook_world_amr_pickup.copy()
+
+                T_hook_world_amr_pos5.translation = T_hook_world_amr_pos5.translation + np.array([-0.015,0,0])
+
+                T_ee_world_amr_pos5 = T_hook_world_amr_pos5 * self.T_hook_ee.inverse()
+
+                amr_pos5_goal_pose = T_ee_world_amr_pos5.pose_msg
+
+                print("Move Left 1.5cm to jiggle the tray into the slot.")
+
+                while not self.robot_mg.go_to_pose_goal(amr_pos5_goal_pose, cartesian_path=True):
+                    pass
+
+                T_hook_world_amr_pos6 = T_hook_world_amr_pickup.copy()
+
+                T_ee_world_amr_pos6 = T_hook_world_amr_pos6 * self.T_hook_ee.inverse()
+
+                amr_pos6_goal_pose = T_ee_world_amr_pos6.pose_msg
+
+                print("Move back to the center.")
+                while not self.robot_mg.go_to_pose_goal(amr_pos6_goal_pose, cartesian_path=True):
+                    pass
+
+                T_hook_world_amr_pos7 = T_hook_world_amr_pickup.copy()
+
+                T_hook_world_amr_pos7.translation = T_hook_world_amr_pickup.translation + np.array([0,0.04,0])
+
+                T_ee_world_amr_pos7 = T_hook_world_amr_pos7 * self.T_hook_ee.inverse()
+
+                amr_pos7_goal_pose = T_ee_world_amr_pos7.pose_msg
+
+                print("Moving back 4cm")
+                while not self.robot_mg.go_to_pose_goal(amr_pos7_goal_pose, cartesian_path=True):
+                    pass
+
+                T_hook_world_amr_pos8 = T_hook_world_amr_pickup.copy()
+
+                T_hook_world_amr_pos8.translation = T_hook_world_amr_pickup.translation + np.array([0,0.04,0.05])
+
+                T_ee_world_amr_pos8 = T_hook_world_amr_pos8 * self.T_hook_ee.inverse()
+                
+                amr_pos8_goal_pose = T_ee_world_amr_pos8.pose_msg
+
+                print("Moving up 5cm")
+                while not self.robot_mg.go_to_pose_goal(amr_pos8_goal_pose, cartesian_path=True):
+                    pass
+
+            else:
+                ########################## PICKING UP TRAY FROM AMR ##########################
+                target_joint = self.robot_mg.get_current_joints()
+                target_joint[0] -= np.pi*3/4
+
+                while not self.robot_mg.go_to_joint_state(target_joint, cartesian_path=False):
+                    pass
+
+                T_hook_world_amr_pos1 = T_hook_world_amr_pickup.copy()
+
+                T_hook_world_amr_pos1.translation = T_hook_world_amr_pickup.translation + np.array([0,0.04,0.05])
+
+                T_ee_world_amr_pos1 = T_hook_world_amr_pos1 * self.T_hook_ee.inverse()
+                
+                amr_pos1_goal_pose = T_ee_world_amr_pos1.pose_msg
+
+                print("Rotating end effector to -70 degrees and moving -4cm in x and +5cm in z from tray pick up location")
+                while not self.robot_mg.go_to_pose_goal(amr_pos1_goal_pose, cartesian_path=True):
+                    pass
+
+                T_hook_world_amr_pos2 = T_hook_world_amr_pickup.copy()
+
+                T_hook_world_amr_pos2.translation = T_hook_world_amr_pickup.translation + np.array([0,0.04,0])
+
+                T_ee_world_amr_pos2 = T_hook_world_amr_pos2 * self.T_hook_ee.inverse()
+
+                amr_pos2_goal_pose = T_ee_world_amr_pos2.pose_msg
+
+                print("Moving down 4cm")
+                while not self.robot_mg.go_to_pose_goal(amr_pos2_goal_pose, cartesian_path=True):
+                    pass
+
+                T_hook_world_amr_pos3 = T_hook_world_amr_pickup.copy()
+
+                T_ee_world_amr_pos3 = T_hook_world_amr_pos3 * self.T_hook_ee.inverse()
+
+                amr_pos3_goal_pose = T_ee_world_amr_pos3.pose_msg
+
+                print("Moving forward 8cm")
+                while not self.robot_mg.go_to_pose_goal(amr_pos3_goal_pose, cartesian_path=True):
+                    pass
+
+                human_input = input('Press c to continue or r to try again: ')
+
+                while human_input == 'r':
+                    T_hook_world_amr_pos2 = T_hook_world_amr_pickup.copy()
+
+                    T_hook_world_amr_pos2.translation = T_hook_world_amr_pickup.translation + np.array([0,0.04,0])
 
                     T_ee_world_amr_pos2 = T_hook_world_amr_pos2 * self.T_hook_ee.inverse()
 
                     amr_pos2_goal_pose = T_ee_world_amr_pos2.pose_msg
 
-                    print("Moving down 10cm while rotating 2cm to deposit the tray into the slot.")
-
+                    print("Moving backward 8cm")
                     while not self.robot_mg.go_to_pose_goal(amr_pos2_goal_pose, cartesian_path=True):
                         pass
 
-                    T_hook_world_amr_pos3 = T_hook_world_amr_pickup.copy()
+                    T_hook_world_amr_pos1 = T_hook_world_amr_pickup.copy()
 
-                    T_ee_world_amr_pos3 = T_hook_world_amr_pos3 * self.T_hook_ee.inverse()
+                    T_hook_world_amr_pos1.translation = T_hook_world_amr_pickup.translation + np.array([0,0.04,0.05])
 
-                    amr_pos3_goal_pose = T_ee_world_amr_pos3.pose_msg
-
-                    print("Rotating 28 degrees around x")
-                    while not self.robot_mg.go_to_pose_goal(amr_pos3_goal_pose, cartesian_path=True):
-                        pass
-
-                    T_hook_world_amr_pos4 = T_hook_world_amr_pickup.copy()
-
-                    T_hook_world_amr_pos4.translation = T_hook_world_amr_pos4.translation + np.array([0.015,0,0])
-
-                    T_ee_world_amr_pos4 = T_hook_world_amr_pos4 * self.T_hook_ee.inverse()
-
-                    amr_pos4_goal_pose = T_ee_world_amr_pos4.pose_msg
-
-                    print("Move Right 1.5cm to jiggle the tray into the slot.")
-
-                    while not self.robot_mg.go_to_pose_goal(amr_pos4_goal_pose, cartesian_path=True):
-                        pass
-
-                    T_hook_world_amr_pos5 = T_hook_world_amr_pickup.copy()
-
-                    T_hook_world_amr_pos5.translation = T_hook_world_amr_pos5.translation + np.array([-0.015,0,0])
-
-                    T_ee_world_amr_pos5 = T_hook_world_amr_pos5 * self.T_hook_ee.inverse()
-
-                    amr_pos5_goal_pose = T_ee_world_amr_pos5.pose_msg
-
-                    print("Move Left 1.5cm to jiggle the tray into the slot.")
-
-                    while not self.robot_mg.go_to_pose_goal(amr_pos5_goal_pose, cartesian_path=True):
-                        pass
-
-                    T_hook_world_amr_pos6 = T_hook_world_amr_pickup.copy()
-
-                    T_ee_world_amr_pos6 = T_hook_world_amr_pos6 * self.T_hook_ee.inverse()
-
-                    amr_pos6_goal_pose = T_ee_world_amr_pos6.pose_msg
-
-                    print("Move back to the center.")
-                    while not self.robot_mg.go_to_pose_goal(amr_pos6_goal_pose, cartesian_path=True):
-                        pass
-
-                    T_hook_world_amr_pos7 = T_hook_world_amr_pickup.copy()
-
-                    T_hook_world_amr_pos7.translation = T_hook_world_amr_pickup.translation + np.array([0,0.04,0])
-
-                    T_ee_world_amr_pos7 = T_hook_world_amr_pos7 * self.T_hook_ee.inverse()
-
-                    amr_pos7_goal_pose = T_ee_world_amr_pos7.pose_msg
-
-                    print("Moving back 4cm")
-                    while not self.robot_mg.go_to_pose_goal(amr_pos7_goal_pose, cartesian_path=True):
-                        pass
-
-                    T_hook_world_amr_pos8 = T_hook_world_amr_pickup.copy()
-
-                    T_hook_world_amr_pos8.translation = T_hook_world_amr_pickup.translation + np.array([0,0.04,0.05])
-
-                    T_ee_world_amr_pos8 = T_hook_world_amr_pos8 * self.T_hook_ee.inverse()
+                    T_ee_world_amr_pos1 = T_hook_world_amr_pos1 * self.T_hook_ee.inverse()
                     
-                    amr_pos8_goal_pose = T_ee_world_amr_pos8.pose_msg
+                    amr_pos1_goal_pose = T_ee_world_amr_pos1.pose_msg
 
-                    print("Moving up 5cm")
-                    while not self.robot_mg.go_to_pose_goal(amr_pos8_goal_pose, cartesian_path=True):
+                    print("Moving up 4cm")
+                    while not self.robot_mg.go_to_pose_goal(amr_pos1_goal_pose, cartesian_path=True):
                         pass
 
-                else:
-                    ########################## PICKING UP TRAY FROM AMR ##########################
+                    time.sleep(0.1)
+                    print("Returning to Home")
+                    while not self.robot_mg.go_home(velocity_scaling = 0.05, acc_scaling=0.05):
+                        pass
+
+                    amr_pose = rospy.wait_for_message('/'+self.namespace+'/amr_pose', Pose2D)
+
+                    if self.namespace == 'yk_builder':
+                        amr_center = [amr_pose.x, amr_pose.y, 0.21]
+                    elif self.namespace == 'yk_creator':
+                        amr_center = [amr_pose.x, amr_pose.y, 0.205]
+
+                    amr_center_rigid_transform = RigidTransform(translation=amr_center, from_frame='amr', to_frame='world')
+                    amr_rotation = RigidTransform(rotation=RigidTransform.z_axis_rotation(amr_pose.theta), from_frame='amr', to_frame='amr')
+
+                    print(amr_center_rigid_transform)
+
+                    if req.amr == 1:
+                        new_T_tray_world = amr_center_rigid_transform * amr_rotation * self.T_tray_amr1
+                    elif req.amr == 2:
+                        new_T_tray_world = amr_center_rigid_transform * amr_rotation * self.T_tray_amr2
+
+                    print(new_T_tray_world)
+
+                    T_ee_world = RigidTransform(rotation = RigidTransform.z_axis_rotation(amr_pose.theta), from_frame='world', to_frame='world') * self.T_hook_world_amr * self.T_hook_ee.inverse()
+
+                    T_hook_world_amr_pickup = RigidTransform(rotation = T_ee_world.rotation, translation = new_T_tray_world.translation, from_frame='hook', to_frame='world')
+
+                    print(T_hook_world_amr_pickup)
+
+                    while amr_center[0] < self.amr_x_limits[0] or amr_center[0] > self.amr_x_limits[1] or amr_center[1] < self.amr_y_limits[0] or amr_center[1] > self.amr_y_limits[1]:
+                        print("AMR is not docked within a suitable picking or placing location. Please have the AMR redock.")
+                        input("Waiting for AMR to finish redocking. Press enter when done")
+
+                        amr_pose = rospy.wait_for_message('/'+self.namespace+'/amr_pose', Pose2D)
+
+                        amr_center = [amr_pose.x, amr_pose.y, 0.205]
+
+                        amr_center_rigid_transform = RigidTransform(translation=amr_center, from_frame='amr', to_frame='world')
+                        amr_rotation = RigidTransform(rotation=RigidTransform.z_axis_rotation(amr_pose.theta), from_frame='amr', to_frame='amr')
+
+                        print(amr_center_rigid_transform)
+
+                        if req.amr == 1:
+                            new_T_tray_world = amr_center_rigid_transform * amr_rotation * self.T_tray_amr1
+                        elif req.amr == 2:
+                            new_T_tray_world = amr_center_rigid_transform * amr_rotation * self.T_tray_amr2
+
+                        print(new_T_tray_world)
+
+                        T_ee_world = RigidTransform(rotation = RigidTransform.z_axis_rotation(amr_pose.theta), from_frame='world', to_frame='world') * self.T_hook_world_amr * self.T_hook_ee.inverse()
+
+                        T_hook_world_amr_pickup = RigidTransform(rotation = T_ee_world.rotation, translation = new_T_tray_world.translation, from_frame='hook', to_frame='world')
+
+                        print(T_hook_world_amr_pickup)
+
                     target_joint = self.robot_mg.get_current_joints()
                     target_joint[0] -= np.pi*3/4
 
@@ -403,210 +559,212 @@ class PalletPickAndPlaceServer:
                     while not self.robot_mg.go_to_pose_goal(amr_pos3_goal_pose, cartesian_path=True):
                         pass
 
-                    import pdb; pdb.set_trace()
+                    human_input = input('Press c to continue or r to try again: ')
 
-                    T_hook_world_amr_pos4 = T_hook_world_amr_pickup * self.T_hook_rot_28
+                T_hook_world_amr_pos4 = T_hook_world_amr_pickup * self.T_hook_rot_28
 
-                    T_ee_world_amr_pos4 = T_hook_world_amr_pos4 * self.T_hook_ee.inverse()
+                T_ee_world_amr_pos4 = T_hook_world_amr_pos4 * self.T_hook_ee.inverse()
 
-                    amr_pos4_goal_pose = T_ee_world_amr_pos4.pose_msg
+                amr_pos4_goal_pose = T_ee_world_amr_pos4.pose_msg
+
+                print("Rotating end-effector 28 degrees around x")
+
+                while not self.robot_mg.go_to_pose_goal(amr_pos4_goal_pose, cartesian_path=True):
+                    pass
+
+                T_hook_world_amr_pos5 = T_hook_world_amr_pickup * self.T_hook_rot_30
+
+                T_hook_world_amr_pos5.translation[2] += 0.05
+                
+                T_ee_world_amr_pos5 = T_hook_world_amr_pos5 * self.T_hook_ee.inverse()
+
+                amr_pos5_goal_pose = T_ee_world_amr_pos5.pose_msg
+
+                print("Moving up 5cm while rotating 2 degrees around x")
+
+                while not self.robot_mg.go_to_pose_goal(amr_pos5_goal_pose, cartesian_path=True):
+                    pass
+
+                T_ee_world_intermediate_pos1 = self.T_hook_world_intermediate_pos1_unload * self.T_hook_ee.inverse()
+
+                intermediate_pos1_goal_pose = T_ee_world_intermediate_pos1.pose_msg
+
+                print("Moving to intermediate hook pose 1")
+
+                while not self.robot_mg.go_to_pose_goal(intermediate_pos1_goal_pose, cartesian_path=True):
+                    pass
+
+                
+                ########################## PLACING TRAY ON TABLE ##########################
+
+                if req.location == 1:
+                    T_hook_world_tray1_pos1 = self.T_hook_world_tray1 * self.T_hook_rot_30
+                    T_hook_world_tray1_pos1.translation = T_hook_world_tray1_pos1.translation + np.array([0, -0.33,0.1])
+                    T_ee_world_tray1_pos1 = T_hook_world_tray1_pos1 * self.T_hook_ee.inverse()
+
+                    tray1_pos1_goal_pose = T_ee_world_tray1_pos1.pose_msg
+
+                    print("Moving -33cm in y and +10cm in z from tray location")
+
+                    while not self.robot_mg.go_to_pose_goal(tray1_pos1_goal_pose, cartesian_path=True):
+                        pass
+
+                    T_hook_world_tray1_pos2 = self.T_hook_world_tray1 * self.T_hook_rot_28
+                    T_hook_world_tray1_pos2.translation = T_hook_world_tray1_pos2.translation + np.array([0, -0.33,0])
+                    T_ee_world_tray1_pos2 = T_hook_world_tray1_pos2 * self.T_hook_ee.inverse()
+
+                    tray1_pos2_goal_pose = T_ee_world_tray1_pos2.pose_msg
+
+                    print("Moving down 10cm and rotating 2 degrees")
+
+                    while not self.robot_mg.go_to_pose_goal(tray1_pos2_goal_pose, cartesian_path=True):
+                        pass
+
+                    if debug:
+                        pdb.set_trace()
+
+                    T_hook_world_tray1_pos3 = self.T_hook_world_tray1 * self.T_hook_rot_28
+
+                    T_ee_world_tray1_pos3 = T_hook_world_tray1_pos3 * self.T_hook_ee.inverse()
+
+                    tray1_pos3_goal_pose = T_ee_world_tray1_pos3.pose_msg
+
+                    print("Moving left 33cm")
+
+                    while not self.robot_mg.go_to_pose_goal(tray1_pos3_goal_pose, cartesian_path=True):
+                        pass
+
+                    T_hook_world_tray1_pos4 = self.T_hook_world_tray1.copy()
+
+                    T_ee_world_tray1_pos4 = T_hook_world_tray1_pos4 * self.T_hook_ee.inverse()
+
+                    tray1_pos4_goal_pose = T_ee_world_tray1_pos4.pose_msg
+
+                    print("Rotating end-effector 28 degrees around x")
+                    while not self.robot_mg.go_to_pose_goal(tray1_pos4_goal_pose, cartesian_path=True):
+                        pass
+
+                    T_hook_world_tray1_pos5 = self.T_hook_world_tray1.copy()
+
+                    T_hook_world_tray1_pos5.translation = T_hook_world_tray1_pos5.translation + np.array([0,-0.08,0])
+                    T_ee_world_tray1_pos5 = T_hook_world_tray1_pos5 * self.T_hook_ee.inverse()
+
+                    tray1_pos5_goal_pose = T_ee_world_tray1_pos5.pose_msg
+
+                    print("Moving backward 8cm")
+                    while not self.robot_mg.go_to_pose_goal(tray1_pos5_goal_pose, cartesian_path=True):
+                        pass
+
+                    T_hook_world_tray1_pos6 = self.T_hook_world_tray1.copy()
+
+                    T_hook_world_tray1_pos6.translation = T_hook_world_tray1_pos6.translation + np.array([0,-0.08,0.1])
+                    T_ee_world_tray1_pos6 = T_hook_world_tray1_pos6 * self.T_hook_ee.inverse()
+
+                    tray1_pos6_goal_pose = T_ee_world_tray1_pos6.pose_msg
+
+                    print("Moving up 10cm")
+                    while not self.robot_mg.go_to_pose_goal(tray1_pos6_goal_pose, cartesian_path=True):
+                        pass
+
+                    lin_act_msg = Int16()
+                    lin_act_msg.data = 1 + self.toggle_offset
+                    self.toggle_pub.publish(lin_act_msg)
+                elif req.location == 2: 
+
+                    T_ee_world_intermediate_pos2 = self.T_hook_world_intermediate_pos2_unload * self.T_hook_ee.inverse()
+
+                    intermediate_pos2_goal_pose = T_ee_world_intermediate_pos2.pose_msg
+                    print("Moving to intermediate hook pose 2")
+
+                    while not self.robot_mg.go_to_pose_goal(intermediate_pos2_goal_pose, cartesian_path=True):
+                        pass
+
+                    target_joint = self.robot_mg.get_current_joints()
+                    target_joint[0] += np.pi*5/4
+
+                    while not self.robot_mg.go_to_joint_state(target_joint, cartesian_path=False):
+                        pass
+
+                    T_hook_world_tray2_pos1 = self.T_hook_world_tray2 * self.T_hook_rot_30
+                    T_hook_world_tray2_pos1.translation = T_hook_world_tray2_pos1.translation + np.array([-0.33,0,0.2])
+
+                    T_ee_world_tray2_pos1 = T_hook_world_tray2_pos1 * self.T_hook_ee.inverse()
+
+                    tray2_pos1_goal_pose = T_ee_world_tray2_pos1.pose_msg
+
+                    print("Moving -33cm in x and +20cm in z from tray location")
+
+                    while not self.robot_mg.go_to_pose_goal(tray2_pos1_goal_pose, cartesian_path=True):
+                        pass
+
+                    T_hook_world_tray2_pos2 = self.T_hook_world_tray2 * self.T_hook_rot_28
+                    T_hook_world_tray2_pos2.translation = T_hook_world_tray2_pos2.translation + np.array([-0.33,0,0])
+
+                    T_ee_world_tray2_pos2 = T_hook_world_tray2_pos2 * self.T_hook_ee.inverse()
+
+                    tray2_pos2_goal_pose = T_ee_world_tray2_pos2.pose_msg
+
+                    print("Moving down 20cm and rotating 2 degrees")
+
+                    while not self.robot_mg.go_to_pose_goal(tray2_pos2_goal_pose, cartesian_path=True):
+                        pass
+
+                    if debug:
+                        pdb.set_trace()
+
+                    T_hook_world_tray2_pos3 = self.T_hook_world_tray2 * self.T_hook_rot_28
+
+                    T_ee_world_tray2_pos3 = T_hook_world_tray2_pos3 * self.T_hook_ee.inverse()
+
+                    tray2_pos3_goal_pose = T_ee_world_tray2_pos3.pose_msg
+
+                    print("Moving forward 33cm")
+
+                    while not self.robot_mg.go_to_pose_goal(tray2_pos3_goal_pose, cartesian_path=True):
+                        pass
+
+
+                    T_hook_world_tray2_pos4 = self.T_hook_world_tray2.copy()
+
+                    T_ee_world_tray2_pos4 = T_hook_world_tray2_pos4 * self.T_hook_ee.inverse()
+
+                    tray2_pos4_goal_pose = T_ee_world_tray2_pos4.pose_msg
 
                     print("Rotating end-effector 28 degrees around x")
 
-                    while not self.robot_mg.go_to_pose_goal(amr_pos4_goal_pose, cartesian_path=True):
+                    while not self.robot_mg.go_to_pose_goal(tray2_pos4_goal_pose, cartesian_path=True):
                         pass
 
-                    T_hook_world_amr_pos5 = T_hook_world_amr_pickup * self.T_hook_rot_30
+                    T_hook_world_tray2_pos5 = self.T_hook_world_tray2.copy()
 
-                    T_hook_world_amr_pos5.translation[2] += 0.05
-                    
-                    T_ee_world_amr_pos5 = T_hook_world_amr_pos5 * self.T_hook_ee.inverse()
+                    T_hook_world_tray2_pos5.translation = T_hook_world_tray2_pos5.translation + np.array([-0.08,0,0])
+                    T_ee_world_tray2_pos5 = T_hook_world_tray2_pos5 * self.T_hook_ee.inverse()
 
-                    amr_pos5_goal_pose = T_ee_world_amr_pos5.pose_msg
+                    tray2_pos5_goal_pose = T_ee_world_tray2_pos5.pose_msg
 
-                    print("Moving up 5cm while rotating 2 degrees around x")
+                    print("Moving backward 8cm")
 
-                    while not self.robot_mg.go_to_pose_goal(amr_pos5_goal_pose, cartesian_path=True):
+                    while not self.robot_mg.go_to_pose_goal(tray2_pos5_goal_pose, cartesian_path=True):
                         pass
 
-                    T_ee_world_intermediate_pos1 = self.T_hook_world_intermediate_pos1_unload * self.T_hook_ee.inverse()
+                    T_hook_world_tray2_pos6 = self.T_hook_world_tray2.copy()
 
-                    intermediate_pos1_goal_pose = T_ee_world_intermediate_pos1.pose_msg
+                    T_hook_world_tray2_pos6.translation = T_hook_world_tray2_pos6.translation + np.array([-0.08,0,0.1])
+                    T_ee_world_tray2_pos6 = T_hook_world_tray2_pos6 * self.T_hook_ee.inverse()
 
-                    print("Moving to intermediate hook pose 1")
+                    tray2_pos6_goal_pose = T_ee_world_tray2_pos6.pose_msg
 
-                    while not self.robot_mg.go_to_pose_goal(intermediate_pos1_goal_pose, cartesian_path=True):
+                    print("Moving up 10cm")
+
+                    while not self.robot_mg.go_to_pose_goal(tray2_pos6_goal_pose, cartesian_path=True):
                         pass
 
-                    
-                    ########################## PLACING TRAY ON TABLE ##########################
-
-                    if req.location == 1:
-                        T_hook_world_tray1_pos1 = self.T_hook_world_tray1 * self.T_hook_rot_30
-                        T_hook_world_tray1_pos1.translation = T_hook_world_tray1_pos1.translation + np.array([0, -0.33,0.1])
-                        T_ee_world_tray1_pos1 = T_hook_world_tray1_pos1 * self.T_hook_ee.inverse()
-
-                        tray1_pos1_goal_pose = T_ee_world_tray1_pos1.pose_msg
-
-                        print("Moving -33cm in y and +10cm in z from tray location")
-
-                        while not self.robot_mg.go_to_pose_goal(tray1_pos1_goal_pose, cartesian_path=True):
-                            pass
-
-                        T_hook_world_tray1_pos2 = self.T_hook_world_tray1 * self.T_hook_rot_28
-                        T_hook_world_tray1_pos2.translation = T_hook_world_tray1_pos2.translation + np.array([0, -0.33,0])
-                        T_ee_world_tray1_pos2 = T_hook_world_tray1_pos2 * self.T_hook_ee.inverse()
-
-                        tray1_pos2_goal_pose = T_ee_world_tray1_pos2.pose_msg
-
-                        print("Moving down 10cm and rotating 2 degrees")
-
-                        while not self.robot_mg.go_to_pose_goal(tray1_pos2_goal_pose, cartesian_path=True):
-                            pass
-
-                        import pdb; pdb.set_trace();
-
-                        T_hook_world_tray1_pos3 = self.T_hook_world_tray1 * self.T_hook_rot_28
-
-                        T_ee_world_tray1_pos3 = T_hook_world_tray1_pos3 * self.T_hook_ee.inverse()
-
-                        tray1_pos3_goal_pose = T_ee_world_tray1_pos3.pose_msg
-
-                        print("Moving left 33cm")
-
-                        while not self.robot_mg.go_to_pose_goal(tray1_pos3_goal_pose, cartesian_path=True):
-                            pass
-
-                        T_hook_world_tray1_pos4 = self.T_hook_world_tray1.copy()
-
-                        T_ee_world_tray1_pos4 = T_hook_world_tray1_pos4 * self.T_hook_ee.inverse()
-
-                        tray1_pos4_goal_pose = T_ee_world_tray1_pos4.pose_msg
-
-                        print("Rotating end-effector 28 degrees around x")
-                        while not self.robot_mg.go_to_pose_goal(tray1_pos4_goal_pose, cartesian_path=True):
-                            pass
-
-                        T_hook_world_tray1_pos5 = self.T_hook_world_tray1.copy()
-
-                        T_hook_world_tray1_pos5.translation = T_hook_world_tray1_pos5.translation + np.array([0,-0.08,0])
-                        T_ee_world_tray1_pos5 = T_hook_world_tray1_pos5 * self.T_hook_ee.inverse()
-
-                        tray1_pos5_goal_pose = T_ee_world_tray1_pos5.pose_msg
-
-                        print("Moving backward 8cm")
-                        while not self.robot_mg.go_to_pose_goal(tray1_pos5_goal_pose, cartesian_path=True):
-                            pass
-
-                        T_hook_world_tray1_pos6 = self.T_hook_world_tray1.copy()
-
-                        T_hook_world_tray1_pos6.translation = T_hook_world_tray1_pos6.translation + np.array([0,-0.08,0.1])
-                        T_ee_world_tray1_pos6 = T_hook_world_tray1_pos6 * self.T_hook_ee.inverse()
-
-                        tray1_pos6_goal_pose = T_ee_world_tray1_pos6.pose_msg
-
-                        print("Moving up 10cm")
-                        while not self.robot_mg.go_to_pose_goal(tray1_pos6_goal_pose, cartesian_path=True):
-                            pass
-
-                        lin_act_msg = Int16()
-                        lin_act_msg.data = 1 + self.toggle_offset
-                        self.toggle_pub.publish(lin_act_msg)
-                    elif req.location == 2: 
-
-                        T_ee_world_intermediate_pos2 = self.T_hook_world_intermediate_pos2_unload * self.T_hook_ee.inverse()
-
-                        intermediate_pos2_goal_pose = T_ee_world_intermediate_pos2.pose_msg
-                        print("Moving to intermediate hook pose 2")
-
-                        while not self.robot_mg.go_to_pose_goal(intermediate_pos2_goal_pose, cartesian_path=True):
-                            pass
-
-                        target_joint = self.robot_mg.get_current_joints()
-                        target_joint[0] += np.pi*5/4
-
-                        while not self.robot_mg.go_to_joint_state(target_joint, cartesian_path=False):
-                            pass
-
-                        T_hook_world_tray2_pos1 = self.T_hook_world_tray2 * self.T_hook_rot_30
-                        T_hook_world_tray2_pos1.translation = T_hook_world_tray2_pos1.translation + np.array([-0.33,0,0.2])
-
-                        T_ee_world_tray2_pos1 = T_hook_world_tray2_pos1 * self.T_hook_ee.inverse()
-
-                        tray2_pos1_goal_pose = T_ee_world_tray2_pos1.pose_msg
-
-                        print("Moving -33cm in x and +20cm in z from tray location")
-
-                        while not self.robot_mg.go_to_pose_goal(tray2_pos1_goal_pose, cartesian_path=True):
-                            pass
-
-                        T_hook_world_tray2_pos2 = self.T_hook_world_tray2 * self.T_hook_rot_28
-                        T_hook_world_tray2_pos2.translation = T_hook_world_tray2_pos2.translation + np.array([-0.33,0,0])
-
-                        T_ee_world_tray2_pos2 = T_hook_world_tray2_pos2 * self.T_hook_ee.inverse()
-
-                        tray2_pos2_goal_pose = T_ee_world_tray2_pos2.pose_msg
-
-                        print("Moving down 20cm and rotating 2 degrees")
-
-                        while not self.robot_mg.go_to_pose_goal(tray2_pos2_goal_pose, cartesian_path=True):
-                            pass
-
-                        import pdb; pdb.set_trace();
-
-                        T_hook_world_tray2_pos3 = self.T_hook_world_tray2 * self.T_hook_rot_28
-
-                        T_ee_world_tray2_pos3 = T_hook_world_tray2_pos3 * self.T_hook_ee.inverse()
-
-                        tray2_pos3_goal_pose = T_ee_world_tray2_pos3.pose_msg
-
-                        print("Moving forward 33cm")
-
-                        while not self.robot_mg.go_to_pose_goal(tray2_pos3_goal_pose, cartesian_path=True):
-                            pass
-
-
-                        T_hook_world_tray2_pos4 = self.T_hook_world_tray2.copy()
-
-                        T_ee_world_tray2_pos4 = T_hook_world_tray2_pos4 * self.T_hook_ee.inverse()
-
-                        tray2_pos4_goal_pose = T_ee_world_tray2_pos4.pose_msg
-
-                        print("Rotating end-effector 28 degrees around x")
-
-                        while not self.robot_mg.go_to_pose_goal(tray2_pos4_goal_pose, cartesian_path=True):
-                            pass
-
-                        T_hook_world_tray2_pos5 = self.T_hook_world_tray2.copy()
-
-                        T_hook_world_tray2_pos5.translation = T_hook_world_tray2_pos5.translation + np.array([-0.08,0,0])
-                        T_ee_world_tray2_pos5 = T_hook_world_tray2_pos5 * self.T_hook_ee.inverse()
-
-                        tray2_pos5_goal_pose = T_ee_world_tray2_pos5.pose_msg
-
-                        print("Moving backward 8cm")
-
-                        while not self.robot_mg.go_to_pose_goal(tray2_pos5_goal_pose, cartesian_path=True):
-                            pass
-
-                        T_hook_world_tray2_pos6 = self.T_hook_world_tray2.copy()
-
-                        T_hook_world_tray2_pos6.translation = T_hook_world_tray2_pos6.translation + np.array([-0.08,0,0.1])
-                        T_ee_world_tray2_pos6 = T_hook_world_tray2_pos6 * self.T_hook_ee.inverse()
-
-                        tray2_pos6_goal_pose = T_ee_world_tray2_pos6.pose_msg
-
-                        print("Moving up 10cm")
-
-                        while not self.robot_mg.go_to_pose_goal(tray2_pos6_goal_pose, cartesian_path=True):
-                            pass
-
-                        lin_act_msg = Int16()
-                        lin_act_msg.data = 2 + self.toggle_offset
-                        self.toggle_pub.publish(lin_act_msg)
-                        
+                    lin_act_msg = Int16()
+                    lin_act_msg.data = 2 + self.toggle_offset
+                    self.toggle_pub.publish(lin_act_msg)
+            time.sleep(0.1)
             print("Returning to Home")
-            while not self.robot_mg.go_home():
+            while not self.robot_mg.go_home(velocity_scaling = 0.05, acc_scaling=0.05):
                 pass
 
             return PalletPickAndPlaceResponse(True)
