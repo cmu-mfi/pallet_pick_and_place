@@ -278,7 +278,7 @@ class PalletPickAndPlaceServer:
                     intermediate_pos1_goal_pose = T_ee_world_intermediate_pos1.pose_msg
 
                     print("Moving to intermediate hook pose 1")
-
+                    time.sleep(0.1)
                     while not self.robot_mg.go_to_pose_goal(intermediate_pos1_goal_pose, cartesian_path=True):
                         pass
 
@@ -294,7 +294,7 @@ class PalletPickAndPlaceServer:
                 intermediate_pos1_goal_pose = T_ee_world_intermediate_pos1.pose_msg
 
                 print("Moving to intermediate hook pose 1")
-
+                time.sleep(0.1)
                 while not self.robot_mg.go_to_pose_goal(intermediate_pos1_goal_pose, cartesian_path=True):
                     pass
 
@@ -590,7 +590,7 @@ class PalletPickAndPlaceServer:
                 intermediate_pos1_goal_pose = T_ee_world_intermediate_pos1.pose_msg
 
                 print("Moving to intermediate hook pose 1")
-
+                time.sleep(0.1)
                 while not self.robot_mg.go_to_pose_goal(intermediate_pos1_goal_pose, cartesian_path=True):
                     pass
 
@@ -675,7 +675,7 @@ class PalletPickAndPlaceServer:
 
                     intermediate_pos2_goal_pose = T_ee_world_intermediate_pos2.pose_msg
                     print("Moving to intermediate hook pose 2")
-
+                    time.sleep(0.1)
                     while not self.robot_mg.go_to_pose_goal(intermediate_pos2_goal_pose, cartesian_path=True):
                         pass
 

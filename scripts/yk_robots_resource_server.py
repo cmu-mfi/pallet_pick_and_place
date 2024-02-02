@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import requests
 import time
 import threading
@@ -9,6 +10,7 @@ from std_msgs.msg import Int64, Float32MultiArray
 
 # creating a Flask app 
 app = Flask(__name__)
+CORS(app)
 
 executer_url = 'http://localhost:9091/execution'
 threading.Thread(target=lambda: rospy.init_node('flask_server2', disable_signals=True, anonymous=True)).start()
@@ -59,8 +61,8 @@ def yk_robots (start_msg):
 
             print('here')
 
-            yk_builder_assembly_plate_state_pub.publish(Float32MultiArray(data=[0.2645, 0.0465, 0.193, 0, 0, -0.0114]))
-            yk_builder_kit_plate_state_pub.publish(Float32MultiArray(data=[0.2598, 0.448, 0.192, 0, 0, 0]))
+            yk_builder_assembly_plate_state_pub.publish(Float32MultiArray(data=[0.2635, 0.0465, 0.193, 0, 0, -0.0114]))
+            yk_builder_kit_plate_state_pub.publish(Float32MultiArray(data=[0.259, 0.448, 0.192, 0, 0, 0]))
             rospy.sleep(1)
             yk_builder_start_task_pub.publish(1)
             rospy.sleep(1)
